@@ -1,36 +1,49 @@
-﻿// <SnippetAddUsings>
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.IO;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+using System.IO;
 using Microsoft.ML;
 using Microsoft.ML.Data;
-// </SnippetAddUsings>
 
-namespace TransferLearningTF
+namespace LeafRecognizer
 {
-    class Program
+    public partial class Form1 : Form
     {
+        public Form1()
+        {
+            InitializeComponent();
+            run();
+        }
+
         static readonly string _assetsPath = Path.Combine(Environment.CurrentDirectory, "assets");
-        static readonly string _imagesFolder = Path.Combine(_assetsPath, "images");
-        static readonly string _trainTagsTsv = Path.Combine(_imagesFolder, "tags.tsv");
-        static readonly string _testTagsTsv = Path.Combine(_imagesFolder, "test-tags.tsv");
+        static readonly string _tagsPath = Path.Combine(_assetsPath, "images");
+        static readonly string _imagesFolder = Path.Combine(_assetsPath, "images\\toLearn");
+        static readonly string _trainTagsTsv = Path.Combine(_tagsPath, "tags.tsv");
+        static readonly string _testTagsTsv = Path.Combine(_tagsPath, "test-tags.tsv");
         static readonly string _inceptionTensorFlowModel = Path.Combine(_assetsPath, "inception", "tensorflow_inception_graph.pb");
 
-        static void Main(string[] args)
+        string picturePath;
+        MLContext mlContext;
+        ITransformer model;
+        bool pictureLoaded = false;
+
+        void run()
         {
             // Create MLContext to be shared across the model creation workflow objects
-            MLContext mlContext = new MLContext();
+            mlContext = new MLContext();
 
-            ITransformer model = GenerateModel(mlContext);
-
-            ClassifySingleImage(mlContext, model);
-
-            Console.ReadKey();
+            model = GenerateModel(mlContext);
         }
 
         // Build and train model
-        public static ITransformer GenerateModel(MLContext mlContext)
+        public ITransformer GenerateModel(MLContext mlContext)
         {
             IEstimator<ITransformer> pipeline = mlContext.Transforms.LoadImages(outputColumnName: "input", imageFolder: _imagesFolder, inputColumnName: nameof(ImageData.ImagePath))
                             // The image transforms transform the images into the model's expected format.
@@ -48,7 +61,6 @@ namespace TransferLearningTF
             IDataView trainingData = mlContext.Data.LoadFromTextFile<ImageData>(path: _trainTagsTsv, hasHeader: false);
 
             // Train the model
-            Console.WriteLine("=============== Training classification model ===============");
             // Create and train the model
             ITransformer model = pipeline.Fit(trainingData);
 
@@ -58,51 +70,37 @@ namespace TransferLearningTF
 
             // Create an IEnumerable for the predictions for displaying results
             IEnumerable<ImagePrediction> imagePredictionData = mlContext.Data.CreateEnumerable<ImagePrediction>(predictions, true);
-            DisplayResults(imagePredictionData);
 
             // Get performance metrics on the model using training data
-            Console.WriteLine("=============== Classification metrics ===============");
 
             MulticlassClassificationMetrics metrics =
                 mlContext.MulticlassClassification.Evaluate(predictions,
                   labelColumnName: "LabelKey",
                   predictedLabelColumnName: "PredictedLabel");
 
-            Console.WriteLine($"LogLoss is: {metrics.LogLoss}");
-            Console.WriteLine($"PerClassLogLoss is: {String.Join(" , ", metrics.PerClassLogLoss.Select(c => c.ToString()))}");
+            //In classification, an evaluation metric that characterizes the accuracy of a classifier. 
+            //The smaller log loss is, the more accurate a classifier is.
+            logLoss.Text = metrics.LogLoss.ToString();
+            pcLogLoss.Text = String.Join(" , ", metrics.PerClassLogLoss.Select(c => c.ToString()));
 
             return model;
         }
 
-        public static void ClassifySingleImage(MLContext mlContext, ITransformer model)
+        public string ClassifySingleImage(MLContext mlContext, ITransformer model)
         {
-            Console.WriteLine("=============== Making single image classification ===============");
-
-            for (int i = 0; i < 7; i++)
+            var imageData = new ImageData()
             {
-                // load the fully qualified image file name into ImageData
-                var imageData = new ImageData()
-                {
-                    ImagePath = "test" + i.ToString() + ".jpg"
-                };
+                ImagePath = picturePath
+            };
 
-                // Make prediction function (input = ImageData, output = ImagePrediction)
-                var predictor = mlContext.Model.CreatePredictionEngine<ImageData, ImagePrediction>(model);
-                var prediction = predictor.Predict(imageData);
+            // Make prediction function (input = ImageData, output = ImagePrediction)
+            var predictor = mlContext.Model.CreatePredictionEngine<ImageData, ImagePrediction>(model);
+            var prediction = predictor.Predict(imageData);
 
-                Console.WriteLine($"Image: {Path.GetFileName(imageData.ImagePath)} predicted as: {prediction.PredictedLabelValue} with score: {prediction.Score.Max()} ");
-            }
+            return $"{prediction.PredictedLabelValue} with score: {prediction.Score.Max()} ";
         }
 
-        private static void DisplayResults(IEnumerable<ImagePrediction> imagePredictionData)
-        {
-            foreach (ImagePrediction prediction in imagePredictionData)
-            {
-                Console.WriteLine($"Image: {Path.GetFileName(prediction.ImagePath)} predicted as: {prediction.PredictedLabelValue} with score: {prediction.Score.Max()} ");
-            }
-        }
-
-        public static IEnumerable<ImageData> ReadFromTsv(string file, string folder)
+        public IEnumerable<ImageData> ReadFromTsv(string file, string folder)
         {
             //Need to parse through the tags.tsv file to combine the file path to the
             // image name for the ImagePath property so that the image file can be found.
@@ -138,6 +136,41 @@ namespace TransferLearningTF
             public float[] Score;
 
             public string PredictedLabelValue;
+        }
+
+        private void LoadButton_Click(object sender, EventArgs e)
+        {
+            var fileContent = string.Empty;
+            var filePath = string.Empty;
+
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.InitialDirectory = Directory.GetCurrentDirectory() + "\\assets\\images\\toRecognize";
+                openFileDialog.Filter = "jpg files (*.jpg)|*.jpg";
+                openFileDialog.FilterIndex = 2;
+                openFileDialog.RestoreDirectory = true;
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    //Get the path of specified file
+                    filePath = openFileDialog.FileName;
+
+                    leafPicture.SizeMode = PictureBoxSizeMode.Zoom;
+                    leafPicture.Load(filePath);
+                    picturePath = filePath;
+                    pictureLoaded = true;
+                }
+            }
+        }
+
+        private void RecognizeButton_Click(object sender, EventArgs e)
+        {
+            if(pictureLoaded == false)
+            {
+                MessageBox.Show("Select an image first!");
+                return;
+            }
+            Output.Text = ClassifySingleImage(mlContext, model);
         }
     }
 }
