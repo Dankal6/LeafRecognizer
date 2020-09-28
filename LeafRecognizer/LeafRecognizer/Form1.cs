@@ -64,6 +64,7 @@ namespace LeafRecognizer
             // Create and train the model
             ITransformer model = pipeline.Fit(trainingData);
 
+
             // Generate predictions from the test data, to be evaluated
             IDataView testData = mlContext.Data.LoadFromTextFile<ImageData>(path: _testTagsTsv, hasHeader: false);
             IDataView predictions = model.Transform(testData);
@@ -117,7 +118,7 @@ namespace LeafRecognizer
         {
             public const int ImageHeight = 224;
             public const int ImageWidth = 224;
-            public const float Mean = 117;
+            public const float Mean = 100;
             public const float Scale = 1;
             public const bool ChannelsLast = true;
         }
